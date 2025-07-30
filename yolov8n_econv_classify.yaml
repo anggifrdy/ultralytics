@@ -1,0 +1,21 @@
+# yolov8n_econv.yaml
+task: classify
+nc: 10
+imgsz: 64 # Add this to define input size
+
+scales:
+  n: [0.33, 0.25, 1024]
+  s: [0.33, 0.50, 1024]
+  m: [0.67, 0.75, 768]
+  l: [1.00, 1.00, 512]
+  x: [1.00, 1.25, 512]
+
+# Model configuration
+backbone:
+  - [-1, 1, EConv, [8, 8, 8]] # in=3, out=8, k=8, s=8
+  - [-1, 1, Conv, [8, 3, 2]] # in=8, out=8, k=3, s=2
+
+head:
+  - [-1, 1, nn.AdaptiveAvgPool2d, [1]]
+  - [-1, 1, nn.Flatten, []]
+  - [-1, 1, nn.Linear, [8, 10]] # 8 input features, 10 output

@@ -1,0 +1,29 @@
+# yolov8n_econv_detect.yaml
+task: detect
+nc: 80
+imgsz: 640
+
+scales:
+  n: [0.33, 0.25, 1024]
+  s: [0.33, 0.50, 1024]
+  m: [0.67, 0.75, 768]
+  l: [1.00, 1.00, 512]
+  x: [1.00, 1.25, 512]
+
+backbone:
+  # EConv arguments adjusted to: [kernel_size, stride, output_channels]
+  # Original: [16, 3, 2] (ch_out, k, s)
+  # Corrected: [3, 2, 16] (k, s, ch_out)
+  - [-1, 1, EConv, [3, 2, 16]] # k=3, s=2, ch_out=16
+  - [-1, 1, Conv, [32, 3, 2]] # ch_out=32, k=3, s=2
+  # Original: [64, 3, 2] (ch_out, k, s)
+  # Corrected: [3, 2, 64] (k, s, ch_out)
+  - [-1, 1, EConv, [3, 2, 64]] # k=3, s=2, ch_out=64
+
+head:
+  # This is the last convolutional layer before the Detect head.
+  # Its output will be fed directly to the Detect layer.
+  - [-1, 1, Conv, [64, 3, 1]] # ch_out=64, k=3, s=1
+  # The Detect layer will now take input from the immediately preceding Conv layer (layer 3)
+  # and handle the final prediction convolutions internally.
+  - [[-1], 1, Detect, [nc]] # Detect layer takes input from the immediately preceding layer

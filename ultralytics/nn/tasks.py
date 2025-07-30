@@ -15,6 +15,8 @@ from ultralytics.nn.modules import (
     AIFI,
     C1,
     C2,
+    CBAM,
+    EConv,
     C2PSA,
     C3,
     C3TR,
@@ -1612,6 +1614,8 @@ def parse_model(d, ch, verbose=True):
         {
             Classify,
             Conv,
+            EConv,
+            CBAM,
             ConvTranspose,
             GhostConv,
             Bottleneck,
@@ -1679,6 +1683,15 @@ def parse_model(d, ch, verbose=True):
                     args[j] = locals()[a] if a in locals() else ast.literal_eval(a)
         n = n_ = max(round(n * depth), 1) if n > 1 else n  # depth gain
         if m in base_modules:
+            if m is EConv:
+                c1, c2 = ch[f], args[0]
+                args = [
+                    int(x) if isinstance(x, (float, str)) and x.isdigit()
+                    else x
+                    for x in args
+                ]
+            else:
+                c1, c2 = ch[f], args[0]
             c1, c2 = ch[f], args[0]
             if c2 != nc:  # if c2 not equal to number of classes (i.e. for Classify() output)
                 c2 = make_divisible(min(c2, max_channels) * width, 8)

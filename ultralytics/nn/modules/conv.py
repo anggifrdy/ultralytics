@@ -615,41 +615,106 @@ class SpatialAttention(nn.Module):
         return x * self.act(self.cv1(torch.cat([torch.mean(x, 1, keepdim=True), torch.max(x, 1, keepdim=True)[0]], 1)))
 
 
+# class CBAM(nn.Module):
+#     """
+#     Convolutional Block Attention Module.
+
+#     Combines channel and spatial attention mechanisms for comprehensive feature refinement.
+
+#     Attributes:
+#         channel_attention (ChannelAttention): Channel attention module.
+#         spatial_attention (SpatialAttention): Spatial attention module.
+#     """
+
+#     def __init__(self, c1, kernel_size=7):
+#         """
+#         Initialize CBAM with given parameters.
+
+#         Args:
+#             c1 (int): Number of input channels.
+#             kernel_size (int): Size of the convolutional kernel for spatial attention.
+#         """
+#         super().__init__()
+#         self.channel_attention = ChannelAttention(c1)
+#         self.spatial_attention = SpatialAttention(kernel_size)
+
+#     def forward(self, x):
+#         """
+#         Apply channel and spatial attention sequentially to input tensor.
+
+#         Args:
+#             x (torch.Tensor): Input tensor.
+
+#         Returns:
+#             (torch.Tensor): Attended output tensor.
+#         """
+#         return self.spatial_attention(self.channel_attention(x))
 class CBAM(nn.Module):
-    """
-    Convolutional Block Attention Module.
+    """Convolutional Block Attention Module"""
 
-    Combines channel and spatial attention mechanisms for comprehensive feature refinement.
-
-    Attributes:
-        channel_attention (ChannelAttention): Channel attention module.
-        spatial_attention (SpatialAttention): Spatial attention module.
-    """
-
-    def __init__(self, c1, kernel_size=7):
-        """
-        Initialize CBAM with given parameters.
-
-        Args:
-            c1 (int): Number of input channels.
-            kernel_size (int): Size of the convolutional kernel for spatial attention.
-        """
+    def __init__(self, c1, reduction=16):
         super().__init__()
-        self.channel_attention = ChannelAttention(c1)
-        self.spatial_attention = SpatialAttention(kernel_size)
+        self.channel_attention = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Conv2d(c1, c1 // reduction, 1),
+            nn.ReLU(),
+            nn.Conv2d(c1 // reduction, c1, 1),
+            nn.Sigmoid(),
+        )
+        self.spatial_attention = nn.Sequential(
+            nn.Conv2d(2, 1, 7, padding=3), nn.Sigmoid()
+        )
 
     def forward(self, x):
-        """
-        Apply channel and spatial attention sequentially to input tensor.
+        # Channel attention
+        ca = self.channel_attention(x)
+        x_out = x * ca
 
-        Args:
-            x (torch.Tensor): Input tensor.
+        # Spatial attention
+        max_pool = torch.max(x_out, dim=1, keepdim=True)[0]
+        avg_pool = torch.mean(x_out, dim=1, keepdim=True)
+        sa = self.spatial_attention(torch.cat([max_pool, avg_pool], dim=1))
+        return x_out * sa
 
-        Returns:
-            (torch.Tensor): Attended output tensor.
-        """
-        return self.spatial_attention(self.channel_attention(x))
+class EConv(nn.Module):
+    """Enhanced Convolution: Conv2d + BatchNorm + SiLU + SE Attention"""
 
+    def __init__(self, c1, c2, k=3, s=1, p=None, r=16):
+        # Ensure all parameters are integers
+        c1 = int(c1)
+        c2 = int(c2)
+        k = int(k)
+        s = int(s)
+
+        # Auto-pad if not specified
+        if p is None:
+            p = k // 2
+        else:
+            p = int(p)
+
+        super().__init__()
+
+        # 1. Main convolution path
+        self.conv = nn.Conv2d(c1, c2, k, s, p, bias=False)
+        self.bn = nn.BatchNorm2d(c2)
+        self.act = nn.SiLU()
+
+        # 2. SE Attention
+        reduced_channels = max(1, int(c2 // r))
+        self.se = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Conv2d(c2, reduced_channels, kernel_size=1),
+            nn.ReLU(),
+            nn.Conv2d(reduced_channels, c2, kernel_size=1),
+            nn.Sigmoid(),
+        )
+
+        print(f"Created EConv: in={c1}, out={c2}, k={k}, s={s}")
+
+    def forward(self, x):
+        x = self.act(self.bn(self.conv(x)))
+        se = self.se(x)
+        return x * se
 
 class Concat(nn.Module):
     """
